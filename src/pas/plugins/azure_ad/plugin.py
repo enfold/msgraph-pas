@@ -14,6 +14,12 @@ import os
 import httplib
 import urllib
 import json
+from zope.globalrequest import getRequest
+from zope.annotation.interfaces import IAnnotations
+from datetime import datetime
+from time import time
+from plone.memoize import ram
+
 
 logger = logging.getLogger('pas.plugins.azure_ad')
 zmidir = os.path.join(os.path.dirname(__file__), 'zmi')
@@ -34,6 +40,9 @@ manage_addAzureADPluginForm = PageTemplateFile(
     __name__='addAzureADPlugin'
 )
 
+
+def _azure_ad_cachekey(method, self, exact_match=False, **kw):
+    return(time() // (60 * 5), method, exact_match, kw)
 
 @implementer(
     IAzureADPlugin,
@@ -88,7 +97,7 @@ class AzureADPlugin(BasePlugin):
 
     @property
     @security.private
-    def token(self):
+    def _token_data(self):
         params = {
             'api-version': self._api_version,
             'grant_type': 'client_credentials',
@@ -103,7 +112,21 @@ class AzureADPlugin(BasePlugin):
         data = response.read()
         token_data = json.loads(data)
         conn.close()
-        return token_data['access_token']
+        return token_data
+
+    @property
+    @security.private
+    def token(self):
+        request = getRequest()
+        key = "pas.plugins.azure_ad-token_data"
+        cache = IAnnotations(request)
+        data = cache.get(key, None)
+        if not data or \
+           datetime.now() > datetime.fromtimestamp(int(data['expires_on'])):
+            data = self._token_data
+            cache[key] = data
+
+        return data['access_token']
 
     @property
     @security.private
@@ -136,6 +159,7 @@ class AzureADPlugin(BasePlugin):
         return users
 
     @security.private
+    @ram.cache(_azure_ad_cachekey)
     def users(self, exact_match=False, **kw):
         params = {
             'api-version': self._api_version,
@@ -157,7 +181,7 @@ class AzureADPlugin(BasePlugin):
 
 #        httplib.HTTPConnection.debuglevel = 1
         conn = httplib.HTTPSConnection('graph.windows.net')
-        logger.info(params)
+        logger.debug(params)
         conn.request('GET', '/{0}/users?{1}'.format(self._tenant_id,
                      urllib.urlencode(params)), '', headers)
         response = conn.getresponse()
@@ -165,7 +189,7 @@ class AzureADPlugin(BasePlugin):
         users_data = json.loads(data)
         conn.close()
 #        httplib.HTTPConnection.debuglevel = 0
-        logger.info(users_data.get('value'))
+        logger.debug(users_data.get('value'))
         return users_data.get('value')
 
     @security.public
