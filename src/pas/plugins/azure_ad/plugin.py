@@ -44,6 +44,7 @@ manage_addAzureADPluginForm = PageTemplateFile(
 def _azure_ad_cachekey(method, self, exact_match=False, **kw):
     return(time() // (60 * 5), method, exact_match, kw)
 
+
 @implementer(
     IAzureADPlugin,
     pas_interfaces.IGroupEnumerationPlugin,
