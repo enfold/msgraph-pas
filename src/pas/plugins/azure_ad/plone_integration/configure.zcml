@@ -1,0 +1,28 @@
+<configure
+    xmlns="http://namespaces.zope.org/zope"
+    xmlns:browser="http://namespaces.zope.org/browser"
+    xmlns:genericsetup="http://namespaces.zope.org/genericsetup"
+    i18n_domain="pas.plugins.azure_ad">
+
+  <include package="Products.CMFCore" />
+
+  <genericsetup:registerProfile
+    name="default"
+    title="Azure AD Plugin for PAS - Plone Integration"
+    directory="profiles/default"
+    description="Extension profile for pas.plugins.azure_ad Plone Integration."
+    provides="Products.GenericSetup.interfaces.EXTENSION" />
+
+  <genericsetup:registerProfile
+      name="uninstall"
+      title="Azure AD Plugin for PAS - Plone Integration Uninstall"
+      directory="profiles/uninstall"
+      description="Uninstall profile for the pas.plugin.azure_ad Plone Integration."
+      provides="Products.GenericSetup.interfaces.EXTENSION"
+      />
+
+  <utility
+    factory=".HiddenProfiles"
+    name="pas.plugins.azure_ad" />
+
+</configure>

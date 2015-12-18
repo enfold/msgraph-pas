@@ -1,0 +1,10 @@
+<?xml version="1.0"?>
+<import-steps>
+ <import-step id="pas.plugins.azure_ad.setup"
+              handler="pas.plugins.azure_ad.setuphandlers.setupPlugin"
+              title="Setup Azuere AD Plugin"
+              version="20151201">
+  <dependency step="plone-final"/>
+  Setup Azure AD Plugin
+ </import-step>
+</import-steps>

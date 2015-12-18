@@ -1,0 +1,40 @@
+---
+- hosts: default
+  sudo: yes
+
+  pre_tasks:
+    - name: Ensure required packages
+      apt: pkg={{ item }} state=present update_cache=yes
+      with_items:
+        - build-essential
+        - python2.7-dev
+        - python2.7-lxml
+        - python2.7-libxslt1
+        - python-pip
+        - libz-dev
+        - libssl-dev
+        - libjpeg-dev
+        - libxml2-dev
+        - libxslt1-dev
+        - poppler-utils
+        - lynx-cur
+        - unzip
+        - supervisor
+        - git
+        - wv
+        - fail2ban
+        - update-notifier
+
+    - name: Ensure recent python-virtualenv
+      pip: name=virtualenv
+      # note that this installs to /usr/local/bin
+      # which is not automatically on the path
+
+  tasks:
+    - name: bootstrap the buildout
+      command: ./bootstrap-4.3.x.sh
+        chdir=/vagrant
+
+    - name: run buildout
+      command: bin/buildout
+        chdir=/vagrant

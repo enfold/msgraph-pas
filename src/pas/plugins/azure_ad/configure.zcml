@@ -1,0 +1,36 @@
+<configure
+    xmlns="http://namespaces.zope.org/zope"
+    xmlns:zcml="http://namespaces.zope.org/zcml"
+    xmlns:browser="http://namespaces.zope.org/browser"
+    xmlns:five="http://namespaces.zope.org/five"
+    xmlns:genericsetup="http://namespaces.zope.org/genericsetup"
+    i18n_domain="pas.plugins.azure_ad">
+
+  <include package="five.globalrequest" />
+
+  <five:registerPackage package="." initialize=".initialize" />
+
+  <include package="Products.GenericSetup" file="meta.zcml" />
+
+  <include package=".zmi" />
+
+  <genericsetup:registerProfile
+    name="default"
+    title="Azure AD Plugin for PAS - Zope 2 Base Installation"
+    directory="profiles/default"
+    description="Extension profile for pas.plugins.azure_ad Zope Base."
+    provides="Products.GenericSetup.interfaces.EXTENSION" />
+
+  <genericsetup:registerProfile
+      name="uninstall"
+      title="Azure AD Plugin for PAS - Zope 2 Uninstall"
+      directory="profiles/uninstall"
+      description="Uninstall profile for the pas.plugin.azure_ad package."
+      provides="Products.GenericSetup.interfaces.EXTENSION"
+      />
+
+  <include
+    zcml:condition="installed Products.CMFPlone"
+    package=".plone_integration" />
+
+</configure>

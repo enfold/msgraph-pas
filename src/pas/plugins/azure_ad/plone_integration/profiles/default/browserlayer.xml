@@ -1,0 +1,5 @@
+<?xml version="1.0"?>
+<layers>
+    <layer name="pas.plugins.azure_ad"
+        interface="pas.plugins.azure_ad.interfaces.IBrowserLayer" />
+</layers>

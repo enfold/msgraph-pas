@@ -2,6 +2,7 @@
 .*.cfg
 .coverage
 .mrsd
+.vagrant
 /*eggs/
 /.project
 /.pydevproject
@@ -14,8 +15,12 @@
 /htmlcov/
 /include/
 /lib/
+/lib64/
 /local/
 /parts/
 /src/*.egg-info
 /var/
 buildout.cfg
+local.cfg
+lib64
+pip-selfcheck.json

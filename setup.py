@@ -4,8 +4,8 @@ from setuptools import (
     find_packages,
 )
 
-version = '1.4.1.dev0'
-shortdesc = "LDAP Plugin for Zope2 PluggableAuthService (users and groups)"
+version = '1.0.0.dev0'
+shortdesc = "Azure AD Plugin for Zope2 PluggableAuthService (users and groups)"
 longdesc = open(os.path.join(os.path.dirname(__file__), 'README.rst')).read()
 longdesc += open(os.path.join(os.path.dirname(__file__), 'TODO.rst')).read()
 longdesc += open(os.path.join(os.path.dirname(__file__), 'CHANGES.rst')).read()
@@ -13,7 +13,7 @@ longdesc += open(os.path.join(os.path.dirname(__file__), 'LICENSE.rst')).read()
 
 
 setup(
-    name='pas.plugins.ldap',
+    name='pas.plugins.azure_ad',
     version=version,
     description=shortdesc,
     long_description=longdesc,
@@ -23,10 +23,10 @@ setup(
         'Operating System :: OS Independent',
         'Programming Language :: Python',
     ],
-    keywords='zope2 pas plone ldap',
-    author='BlueDynamics Alliance',
-    author_email='dev@bluedynamics.com',
-    url='https://pypi.python.org/pypi/pas.plugins.ldap',
+    keywords='zope2 pas plone azure ad',
+    author='Enfold Systems',
+    author_email='jpg@rosario.com',
+    url='https://pypi.python.org/pypi/pas.plugins.azure_ad',
     license='BSD like',
     packages=find_packages('src'),
     package_dir={'': 'src'},
@@ -34,33 +34,10 @@ setup(
     include_package_data=True,
     zip_safe=False,
     install_requires=[
-        'AccessControl>=3.0',
+        'AccessControl',
         'Acquisition',
-        'bda.cache',
-        'five.globalrequest',
-        'node',
-        'node.ext.ldap>=0.9.6',
-        'odict',
-        'plone.registry',
-        'Products.CMFCore',
-        'Products.CMFQuickInstallerTool',
-        'Products.GenericSetup',
-        'Products.PlonePAS',
-        'Products.PluggableAuthService',
-        'Products.statusmessages',
-        'python-ldap',
+        'plone.api',
         'setuptools',
-        'yafowil',
-        'yafowil.plone>=1.3',
-        'yafowil.widget.array',
-        'yafowil.widget.dict',
-        'yafowil.yaml',
-        'zope.component',
-        'zope.globalrequest',
-        'zope.i18nmessageid',
-        'zope.interface',
-        'zope.traversing',
-        'Zope2',
     ],
     extras_require={
         'test': [

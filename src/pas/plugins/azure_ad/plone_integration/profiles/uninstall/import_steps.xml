@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<import-steps>
+ <import-step id="pas.plugins.azure_ad.uninstall"
+              handler="pas.plugins.azure_ad.setuphandlers.uninstallPlugin"
+              title="Uninstall Azure AD Plugin"
+              version="20151201">
+  Setup Azure AD Plugin
+ </import-step>
+</import-steps>
