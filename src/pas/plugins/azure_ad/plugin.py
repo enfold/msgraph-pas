@@ -66,10 +66,25 @@ class AzureADPlugin(BasePlugin):
     _client_id = os.environ.get('AZURE_CLIENT_ID')
     _client_secret = os.environ.get('AZURE_CLIENT_SECRET')
     _map_attrs = json.loads(os.environ.get('AZURE_MAP_ATTRS', '{}'))
+    _format_attrs = json.loads(os.environ.get('AZURE_FORMAT_ATTRS', '{}'))
 
     def __init__(self, id, title=None, **kw):
         self._setId(id)
         self.title = title
+
+    def map_attrs(self, reverse=False, **kw):
+        new_attrs = dict()
+        attrs = reverse and {v: k for k, v in self._map_attrs.items()} \
+            or self._map_attrs
+        for k, v in kw.items():
+            new_attr = attrs.get(k, k)
+            new_attrs[new_attr] = v
+        return new_attrs
+
+    def format_attrs(self, **kw):
+        for k, v in self._format_attrs.items():
+            kw[k] = v.format(**kw)
+        return kw
 
     @property
     @security.private
@@ -131,11 +146,13 @@ class AzureADPlugin(BasePlugin):
         if kw:
             params['$filter'] = ''
             for k, v in kw.items():
+                if not v:
+                    continue
                 if exact_match:
                     params['$filter'] += "{0} eq '{1}' or ".format(k, v)
                 else:
                     params['$filter'] += \
-                        "starswith({0}, '{1}') or ".format(k, v)
+                        "startswith({0}, '{1}') or ".format(k, v)
             params['$filter'] = params['$filter'][:-4]
 
 #        httplib.HTTPConnection.debuglevel = 1
@@ -304,7 +321,7 @@ class AzureADPlugin(BasePlugin):
             if not isinstance(login, basestring):
                 # XXX TODO
                 raise NotImplementedError('sequence is not supported yet.')
-            kw['userPrincipalName'] = login
+            kw['login'] = login
 
         # pas search users gives both login and name if login is meant
         if "login" in kw and "name" in kw:
@@ -314,17 +331,18 @@ class AzureADPlugin(BasePlugin):
             if not isinstance(id, basestring):
                 # XXX TODO
                 raise NotImplementedError('sequence is not supported yet.')
-            kw['displayName'] = id
+            kw['id'] = id
+        kw = self.map_attrs(**kw)
         users = self.users(exact_match, **kw)
         if not users:
             return tuple()
         pluginid = self.getId()
         ret = list()
         for usr in users:
-            ret.append({
-                'id': usr['displayName'],
-                'login': usr['userPrincipalName'],
-                'pluginid': pluginid})
+            usr = self.map_attrs(reverse=True, **usr)
+            usr = self.format_attrs(**usr)
+            usr['pluginid'] = pluginid
+            ret.append(usr)
         if max_results and len(ret) > max_results:
             ret = ret[:max_results]
         return ret
