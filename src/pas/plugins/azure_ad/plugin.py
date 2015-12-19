@@ -1,25 +1,25 @@
 # -*- coding: utf-8 -*-
+import httplib
+import json
+import logging
+import os
+import urllib
+from datetime import datetime
+from time import time
+
 from AccessControl import ClassSecurityInfo
 from App.class_init import InitializeClass
+from pas.plugins.azure_ad.interfaces import IAzureADPlugin
+from plone.memoize import ram
 from Products.PageTemplates.PageTemplateFile import PageTemplateFile
 from Products.PlonePAS import interfaces as plonepas_interfaces
 from Products.PlonePAS.plugins.group import PloneGroup
 from Products.PluggableAuthService.interfaces import plugins as pas_interfaces
 from Products.PluggableAuthService.permissions import ManageGroups
 from Products.PluggableAuthService.plugins.BasePlugin import BasePlugin
-from pas.plugins.azure_ad.interfaces import IAzureADPlugin
-from zope.interface import implementer
-import logging
-import os
-import httplib
-import urllib
-import json
-from zope.globalrequest import getRequest
 from zope.annotation.interfaces import IAnnotations
-from datetime import datetime
-from time import time
-from plone.memoize import ram
-
+from zope.globalrequest import getRequest
+from zope.interface import implementer
 
 logger = logging.getLogger('pas.plugins.azure_ad')
 zmidir = os.path.join(os.path.dirname(__file__), 'zmi')
@@ -42,12 +42,14 @@ manage_addAzureADPluginForm = PageTemplateFile(
 
 
 def _azure_ad_cachekey(method, self, exact_match=False, **kw):
+    logger.debug((time() // (60 * 5), method, exact_match, kw))
     return(time() // (60 * 5), method, exact_match, kw)
 
 
 @implementer(
     IAzureADPlugin,
     pas_interfaces.IGroupEnumerationPlugin,
+    pas_interfaces.IPropertiesPlugin,
     pas_interfaces.IUserEnumerationPlugin,
     plonepas_interfaces.capabilities.IGroupCapability,
     plonepas_interfaces.group.IGroupIntrospection)
@@ -77,6 +79,7 @@ class AzureADPlugin(BasePlugin):
     _client_secret = os.environ.get('AZURE_CLIENT_SECRET')
     _map_attrs = json.loads(os.environ.get('AZURE_MAP_ATTRS', '{}'))
     _format_attrs = json.loads(os.environ.get('AZURE_FORMAT_ATTRS', '{}'))
+    _format_group_attrs = json.loads(os.environ.get('AZURE_FORMAT_GROUP_ATTRS', '{}'))
 
     def __init__(self, id, title=None, **kw):
         self._setId(id)
@@ -91,10 +94,17 @@ class AzureADPlugin(BasePlugin):
             new_attrs[new_attr] = v
         return new_attrs
 
-    def format_attrs(self, **kw):
-        for k, v in self._format_attrs.items():
-            kw[k] = v.format(**kw)
-        return kw
+    def format_attrs(self, format_attrs=None, **kw):
+        kw = {k: v and v or '' for k, v in kw.items()}
+        if not format_attrs:
+            format_attrs = self._format_attrs
+        attrs = dict()
+        for k, v in format_attrs.items():
+            try:
+                attrs[k] = v.format(**kw)
+            except KeyError:
+                pass
+        return attrs
 
     @property
     @security.private
@@ -132,32 +142,45 @@ class AzureADPlugin(BasePlugin):
     @property
     @security.private
     def groups_enabled(self):
-        return self.groups is not None
+        return self.groups() is not None
 
     @property
     @security.private
     def users_enabled(self):
-        return self.users is not None
+        return self.users() is not None
 
-    @property
     @security.private
-    def groups(self):
+    @ram.cache(_azure_ad_cachekey)
+    def groups(self, exact_match=False, **kw):
         params = {
             'api-version': self._api_version,
         }
         headers = {
             'Authorization': 'Bearer {0}'.format(self.token),
         }
+        if kw:
+            params['$filter'] = ''
+            for k, v in kw.items():
+                if not v:
+                    continue
+                if isinstance(v, unicode):
+                    v = v.encode('utf-8')
+                if exact_match:
+                    params['$filter'] += "{0} eq '{1}' or ".format(k, v)
+                else:
+                    params['$filter'] += \
+                        "startswith({0}, '{1}') or ".format(k, v)
+            params['$filter'] = params['$filter'][:-4]
+        logger.debug(params)
         conn = httplib.HTTPSConnection('graph.windows.net')
         conn.request('GET', '/{0}/groups?{1}'.format(self._tenant_id,
                      urllib.urlencode(params)), '', headers)
         response = conn.getresponse()
         data = response.read()
-        users = json.loads(data)
+        groups_data = json.loads(data)
         conn.close()
-        if 'odata.error' in users:
-            return None
-        return users
+        logger.debug(groups_data.get('value'))
+        return groups_data.get('value')
 
     @security.private
     @ram.cache(_azure_ad_cachekey)
@@ -173,6 +196,8 @@ class AzureADPlugin(BasePlugin):
             for k, v in kw.items():
                 if not v:
                     continue
+                if isinstance(v, unicode):
+                    v = v.encode('utf-8')
                 if exact_match:
                     params['$filter'] += "{0} eq '{1}' or ".format(k, v)
                 else:
@@ -245,22 +270,21 @@ class AzureADPlugin(BasePlugin):
         o Insufficiently-specified criteria may have catastrophic
           scaling issues for some implementations.
         """
-        groups = self.groups
+        if id:
+            if not isinstance(id, basestring):
+                # XXX TODO
+                raise NotImplementedError('sequence is not supported yet.')
+            kw['id'] = id
+        kw = self.map_attrs(**kw)
+        groups = self.groups(exact_match, **kw)
         if not groups:
             return ()
-        if id:
-            kw['id'] = id
-        if not kw:  # show all
-            matches = groups.ids
-        else:
-            try:
-                matches = groups.search(criteria=kw, exact_match=exact_match)
-            except ValueError:
-                return ()
-        if sort_by == 'id':
-            matches = sorted(matches)
         pluginid = self.getId()
-        ret = [dict(id=_id, pluginid=pluginid) for _id in matches]
+        ret = list()
+        for group in groups:
+            group = self.map_attrs(reverse=True, **group)   
+            group['pluginid'] = pluginid
+            ret.append(group)
         if max_results and len(ret) > max_results:
             ret = ret[:max_results]
         return ret
@@ -365,7 +389,6 @@ class AzureADPlugin(BasePlugin):
         ret = list()
         for usr in users:
             usr = self.map_attrs(reverse=True, **usr)
-            usr = self.format_attrs(**usr)
             usr['pluginid'] = pluginid
             ret.append(usr)
         if max_results and len(ret) > max_results:
@@ -453,8 +476,14 @@ class AzureADPlugin(BasePlugin):
         """
         ugid = user_or_group.getId()
         try:
-            if self.enumerateUsers(id=ugid) or self.enumerateGroups(id=ugid):
-                return dict(user_or_group)
+            uprops = self.enumerateUsers(id=ugid, exact_match=True)
+            if uprops:
+                return self.format_attrs(**uprops[0])
+            else:
+                gprops = self.enumerateGroups(id=ugid, exact_match=True)
+                if gprops:
+                    return self.format_attrs(format_attrs=self._format_group_attrs,
+                                             **gprops[0])
         except KeyError:
             pass
         return {}
@@ -555,13 +584,12 @@ class AzureADPlugin(BasePlugin):
         Returns the portal_groupdata-ish object for a group
         corresponding to this id. None if group does not exist here!
         """
-        group_id = group_id
-        groups = self.groups
-        if not groups or group_id not in groups.keys():
+        kw = self.map_attrs(**{'id': group_id})
+        groups = self.groups(exact_match=True, **kw)
+        if not groups:
             return None
-        ugmgroup = self.groups[group_id]
-        title = ugmgroup.attrs.get('title', None)
-        group = PloneGroup(ugmgroup.id, title).__of__(self)
+        title = groups[0].get('displayName', None)
+        group = PloneGroup(group_id, title).__of__(self)
         pas = self._getPAS()
         plugins = pas.plugins
         # add properties
@@ -572,9 +600,6 @@ class AzureADPlugin(BasePlugin):
             if not data:
                 continue
             group.addPropertysheet(propfinder_id, data)
-        # add subgroups
-        group._addGroups(pas._getGroupsForPrincipal(group, None,
-                                                    plugins=plugins))
         # add roles
         for rolemaker_id, rolemaker in \
                 plugins.listPlugins(pas_interfaces.IRolesPlugin):
@@ -601,6 +626,7 @@ class AzureADPlugin(BasePlugin):
         """
         return the members of the given group
         """
+        import pdb;pdb.set_trace()                
         try:
             group = self.groups[group_id]
         except (KeyError, TypeError):
