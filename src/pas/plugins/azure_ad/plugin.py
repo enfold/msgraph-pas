@@ -79,7 +79,8 @@ class AzureADPlugin(BasePlugin):
     _client_secret = os.environ.get('AZURE_CLIENT_SECRET')
     _map_attrs = json.loads(os.environ.get('AZURE_MAP_ATTRS', '{}'))
     _format_attrs = json.loads(os.environ.get('AZURE_FORMAT_ATTRS', '{}'))
-    _format_group_attrs = json.loads(os.environ.get('AZURE_FORMAT_GROUP_ATTRS', '{}'))
+    _format_group_attrs = \
+        json.loads(os.environ.get('AZURE_FORMAT_GROUP_ATTRS', '{}'))
 
     def __init__(self, id, title=None, **kw):
         self._setId(id)
@@ -282,7 +283,7 @@ class AzureADPlugin(BasePlugin):
         pluginid = self.getId()
         ret = list()
         for group in groups:
-            group = self.map_attrs(reverse=True, **group)   
+            group = self.map_attrs(reverse=True, **group)
             group['pluginid'] = pluginid
             ret.append(group)
         if max_results and len(ret) > max_results:
@@ -479,11 +480,10 @@ class AzureADPlugin(BasePlugin):
             uprops = self.enumerateUsers(id=ugid, exact_match=True)
             if uprops:
                 return self.format_attrs(**uprops[0])
-            else:
-                gprops = self.enumerateGroups(id=ugid, exact_match=True)
-                if gprops:
-                    return self.format_attrs(format_attrs=self._format_group_attrs,
-                                             **gprops[0])
+            gprops = self.enumerateGroups(id=ugid, exact_match=True)
+            if gprops:
+                return self.format_attrs(format_attrs=self._format_group_attrs,
+                                         **gprops[0])
         except KeyError:
             pass
         return {}
@@ -626,7 +626,6 @@ class AzureADPlugin(BasePlugin):
         """
         return the members of the given group
         """
-        import pdb;pdb.set_trace()                
         try:
             group = self.groups[group_id]
         except (KeyError, TypeError):
