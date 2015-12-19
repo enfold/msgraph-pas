@@ -3,6 +3,7 @@ import httplib
 import json
 import logging
 import os
+import re
 import urllib
 from datetime import datetime
 from time import time
@@ -42,8 +43,8 @@ manage_addAzureADPluginForm = PageTemplateFile(
 
 
 def _azure_ad_cachekey(method, self, exact_match=False, **kw):
-    logger.debug((time() // (60 * 5), method, exact_match, kw))
-    return(time() // (60 * 5), method, exact_match, kw)
+    return(time() // int(os.environ.get('AZURE_CACHE_TIMEOUT', 60)),
+           method, exact_match, kw)
 
 
 @implementer(
@@ -72,7 +73,7 @@ class AzureADPlugin(BasePlugin):
     _graph = 'graph.windows.net'
     # The token endpoint, where the app sends the auth code
     # to get an access token
-    _access_token_uri = '/{0}/oauth2/token'
+    _access_token_url = '/{0}/oauth2/token'
     _api_version = '1.6'
     _tenant_id = os.environ.get('AZURE_TENANT_ID', 'common')
     _client_id = os.environ.get('AZURE_CLIENT_ID')
@@ -118,10 +119,11 @@ class AzureADPlugin(BasePlugin):
             'resource': 'https://{0}'.format(self._graph),
         }
         conn = httplib.HTTPSConnection(self._authority)
-        conn.request('POST', self._access_token_uri.format(self._tenant_id),
+        conn.request('POST', self._access_token_url.format(self._tenant_id),
                      urllib.urlencode(params))
         response = conn.getresponse()
         data = response.read()
+        logger.debug(data)
         token_data = json.loads(data)
         conn.close()
         return token_data
@@ -140,6 +142,22 @@ class AzureADPlugin(BasePlugin):
 
         return data['access_token']
 
+    @security.private
+    @ram.cache(_azure_ad_cachekey)
+    def _azure_ad_request(self, url, method='GET', params={}, headers={}):
+        params['api-version'] = self._api_version
+        headers['Authorization'] = 'Bearer {0}'.format(self.token)
+        conn = httplib.HTTPSConnection(self._graph)
+        conn.request(method, '/{0}/{1}?{2}'.format(self._tenant_id,
+                                                   urllib.quote(url),
+                                                   urllib.urlencode(params)),
+                     '', headers)
+        response = conn.getresponse()
+        data = response.read()
+        logger.debug(data)
+        conn.close()
+        return json.loads(data)
+
     @property
     @security.private
     def groups_enabled(self):
@@ -153,12 +171,7 @@ class AzureADPlugin(BasePlugin):
     @security.private
     @ram.cache(_azure_ad_cachekey)
     def groups(self, exact_match=False, **kw):
-        params = {
-            'api-version': self._api_version,
-        }
-        headers = {
-            'Authorization': 'Bearer {0}'.format(self.token),
-        }
+        params = dict()
         if kw:
             params['$filter'] = ''
             for k, v in kw.items():
@@ -172,26 +185,13 @@ class AzureADPlugin(BasePlugin):
                     params['$filter'] += \
                         "startswith({0}, '{1}') or ".format(k, v)
             params['$filter'] = params['$filter'][:-4]
-        logger.debug(params)
-        conn = httplib.HTTPSConnection('graph.windows.net')
-        conn.request('GET', '/{0}/groups?{1}'.format(self._tenant_id,
-                     urllib.urlencode(params)), '', headers)
-        response = conn.getresponse()
-        data = response.read()
-        groups_data = json.loads(data)
-        conn.close()
-        logger.debug(groups_data.get('value'))
+        groups_data = self._azure_ad_request('/groups', params=params)
         return groups_data.get('value')
 
     @security.private
     @ram.cache(_azure_ad_cachekey)
     def users(self, exact_match=False, **kw):
-        params = {
-            'api-version': self._api_version,
-        }
-        headers = {
-            'Authorization': 'Bearer {0}'.format(self.token),
-        }
+        params = dict()
         if kw:
             params['$filter'] = ''
             for k, v in kw.items():
@@ -206,17 +206,7 @@ class AzureADPlugin(BasePlugin):
                         "startswith({0}, '{1}') or ".format(k, v)
             params['$filter'] = params['$filter'][:-4]
 
-#        httplib.HTTPConnection.debuglevel = 1
-        conn = httplib.HTTPSConnection('graph.windows.net')
-        logger.debug(params)
-        conn.request('GET', '/{0}/users?{1}'.format(self._tenant_id,
-                     urllib.urlencode(params)), '', headers)
-        response = conn.getresponse()
-        data = response.read()
-        users_data = json.loads(data)
-        conn.close()
-#        httplib.HTTPConnection.debuglevel = 0
-        logger.debug(users_data.get('value'))
+        users_data = self._azure_ad_request('/users', params=params)
         return users_data.get('value')
 
     @security.public
@@ -276,6 +266,8 @@ class AzureADPlugin(BasePlugin):
                 # XXX TODO
                 raise NotImplementedError('sequence is not supported yet.')
             kw['id'] = id
+        if 'title' in kw:
+            kw['fullname'] = kw.pop('title')
         kw = self.map_attrs(**kw)
         groups = self.groups(exact_match, **kw)
         if not groups:
@@ -578,37 +570,36 @@ class AzureADPlugin(BasePlugin):
     # (plone ui specific)
 
     # XXX: why dont we have security declarations here?
-
     def getGroupById(self, group_id):
         """
         Returns the portal_groupdata-ish object for a group
         corresponding to this id. None if group does not exist here!
         """
-        kw = self.map_attrs(**{'id': group_id})
-        groups = self.groups(exact_match=True, **kw)
-        if not groups:
+        url = '/groups/{0}'.format(group_id)
+        group = self._azure_ad_request(url)
+        if not group or 'odata.error' in group:
             return None
-        title = groups[0].get('displayName', None)
-        group = PloneGroup(group_id, title).__of__(self)
+        title = group.get('displayName', None)
+        pgroup = PloneGroup(group_id, title).__of__(self)
         pas = self._getPAS()
         plugins = pas.plugins
         # add properties
         for propfinder_id, propfinder in \
                 plugins.listPlugins(pas_interfaces.IPropertiesPlugin):
-
-            data = propfinder.getPropertiesForUser(group, None)
+            data = self.format_attrs(format_attrs=self._format_group_attrs,
+                                     **group)
             if not data:
                 continue
-            group.addPropertysheet(propfinder_id, data)
+            pgroup.addPropertysheet(propfinder_id, data)
         # add roles
         for rolemaker_id, rolemaker in \
                 plugins.listPlugins(pas_interfaces.IRolesPlugin):
 
-            roles = rolemaker.getRolesForPrincipal(group, None)
+            roles = rolemaker.getRolesForPrincipal(pgroup, None)
             if not roles:
                 continue
-            group._addRoles(roles)
-        return group
+            pgroup._addRoles(roles)
+        return pgroup
 
     def getGroups(self):
         """
@@ -620,17 +611,30 @@ class AzureADPlugin(BasePlugin):
         """
         Returns a list of the available groups (ids)
         """
-        return self.groups and self.groups.ids or []
+        ids = []
+        for group in self.groups():
+            id = self.map_attrs(reverse=True, **group).get('id')
+            ids.append(id)
+        return ids
 
     def getGroupMembers(self, group_id):
         """
         return the members of the given group
         """
-        try:
-            group = self.groups[group_id]
-        except (KeyError, TypeError):
+        url = '/groups/{0}/$links/members'.format(group_id)
+        data = self._azure_ad_request(url)
+        if not data:
             return ()
-        return tuple(group.member_ids)
+        members = data.get('value')
+        member_ids = []
+        for member in members:
+            url = re.sub('https://{0}/{1}'.format(self._graph,
+                                                  self._tenant_id),
+                         '', member.get('url'))
+            data = self._azure_ad_request(url)
+            id = self.map_attrs(reverse=True, **data).get('id')
+            member_ids.append(id)
+        return member_ids
 
     # ##
     # plonepas_interfaces.capabilities.IPasswordSetCapability
