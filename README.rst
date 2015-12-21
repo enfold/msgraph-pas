@@ -50,3 +50,8 @@ Contributors
 ============
 
 - Juan Pablo Giménez <jpg@rosario.com>
+- Base on pas.plugins.ldap, Contributors:
+    - Jens W. Klein <jens@bluedynamics.com>
+    - Robert Niederrreiter <rnix [at] squarewave [dot] at>
+    - Florian Friesdorf <flo [at] chaoflow [dot] net>
+    - Daniel Widerin <daniel@widerin.net>

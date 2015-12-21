@@ -1,7 +1,11 @@
 # -*- coding: utf-8 -*-
+import pas.plugins.azure_ad
+from plone.app.robotframework.testing import REMOTE_LIBRARY_BUNDLE_FIXTURE
+from plone.app.testing import (PLONE_FIXTURE, FunctionalTesting,
+                               IntegrationTesting, PloneSandboxLayer,
+                               applyProfile)
+from plone.testing import Layer, z2
 from Products.CMFCore.interfaces import ISiteRoot
-from plone.testing import Layer
-from plone.testing import z2
 from zope.component import provideUtility
 
 try:
@@ -73,3 +77,45 @@ class PASAzureADLayer(Layer):
         """
         for prd, config in self.products:
             z2.installProduct(self['app'], prd)
+
+
+class PASAzureADPloneLayer(PloneSandboxLayer):
+
+    defaultBases = (PLONE_FIXTURE,)
+
+    def setUpZope(self, app, configurationContext):
+        # auto.CSRF_DISABLED = True
+        self.loadZCML(package=pas.plugins.azure_ad)
+        z2.installProduct(app, 'pas.plugins.azure_ad')
+
+    def tearDownZope(self, app):
+        # auto.CSRF_DISABLED = ORIGINAL_CSRF_DISABLED
+        pass
+
+    def setUpPloneSite(self, portal):
+        applyProfile(portal, 'pas.plugins.azure_ad.plone_integration:default')
+
+
+PAS_PLUGINS_AzureAD_PLONE_FIXTURE = PASAzureADPloneLayer()
+
+
+PAS_PLUGINS_AzureAD_PLONE_INTEGRATION_TESTING = IntegrationTesting(
+    bases=(PAS_PLUGINS_AzureAD_PLONE_FIXTURE,),
+    name='PasPluginsAzureADPloneLayer:IntegrationTesting'
+)
+
+
+PAS_PLUGINS_AzureAD_PLONE_FUNCTIONAL_TESTING = FunctionalTesting(
+    bases=(PAS_PLUGINS_AzureAD_PLONE_FIXTURE,),
+    name='PasPluginsAzureADPloneLayer:FunctionalTesting'
+)
+
+
+PAS_PLUGINS_AzureAD_PLONE_ACCEPTANCE_TESTING = FunctionalTesting(
+    bases=(
+        PAS_PLUGINS_AzureAD_PLONE_FIXTURE,
+        REMOTE_LIBRARY_BUNDLE_FIXTURE,
+        z2.ZSERVER_FIXTURE
+    ),
+    name='PasPluginsAzureADPloneLayer:AcceptanceTesting'
+)

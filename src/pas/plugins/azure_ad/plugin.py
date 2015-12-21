@@ -64,8 +64,8 @@ class AzureADPlugin(BasePlugin):
         'action': 'manage_azure_ad_plugin',
     }, ) + BasePlugin.manage_options
 
-    # Tell PAS not to swallow our exceptions
-    _dont_swallow_my_exceptions = True
+    # Tell PAS to swallow our exceptions
+    _dont_swallow_my_exceptions = False
     # OAuth2 is required to access this API.
     # Constant strings for OAuth2 flow
     # The OAuth authority
@@ -82,13 +82,14 @@ class AzureADPlugin(BasePlugin):
     _format_attrs = json.loads(os.environ.get('AZURE_FORMAT_ATTRS', '{}'))
     _format_group_attrs = \
         json.loads(os.environ.get('AZURE_FORMAT_GROUP_ATTRS', '{}'))
+    plugin_caching = True
 
     def __init__(self, id, title=None, **kw):
         self._setId(id)
         self.title = title
 
     def map_attrs(self, reverse=False, **kw):
-        new_attrs = dict()
+        new_attrs = {}
         attrs = reverse and {v: k for k, v in self._map_attrs.items()} \
             or self._map_attrs
         for k, v in kw.items():
@@ -100,7 +101,7 @@ class AzureADPlugin(BasePlugin):
         kw = {k: v and v or '' for k, v in kw.items()}
         if not format_attrs:
             format_attrs = self._format_attrs
-        attrs = dict()
+        attrs = {}
         for k, v in format_attrs.items():
             try:
                 attrs[k] = v.format(**kw)
@@ -133,14 +134,21 @@ class AzureADPlugin(BasePlugin):
     def token(self):
         request = getRequest()
         key = "pas.plugins.azure_ad-token_data"
-        cache = IAnnotations(request)
-        data = cache.get(key, None)
+        if self.plugin_caching:
+            cache = IAnnotations(request)
+            data = cache.get(key, None)
+        else:
+            # we can disable caching for testing purposes
+            data = None
+            cache = {}
         if not data or \
            datetime.now() > datetime.fromtimestamp(int(data['expires_on'])):
             data = self._token_data
             cache[key] = data
 
-        return data['access_token']
+        if 'access_token' in data:
+            return data['access_token']
+        return None
 
     @security.private
     @ram.cache(_azure_ad_cachekey)
@@ -171,7 +179,7 @@ class AzureADPlugin(BasePlugin):
     @security.private
     @ram.cache(_azure_ad_cachekey)
     def groups(self, exact_match=False, **kw):
-        params = dict()
+        params = {}
         if kw:
             params['$filter'] = ''
             for k, v in kw.items():
@@ -186,12 +194,12 @@ class AzureADPlugin(BasePlugin):
                         "startswith({0}, '{1}') or ".format(k, v)
             params['$filter'] = params['$filter'][:-4]
         groups_data = self._azure_ad_request('/groups', params=params)
-        return groups_data.get('value')
+        return groups_data.get('value', ())
 
     @security.private
     @ram.cache(_azure_ad_cachekey)
     def users(self, exact_match=False, **kw):
-        params = dict()
+        params = {}
         if kw:
             params['$filter'] = ''
             for k, v in kw.items():
@@ -296,7 +304,7 @@ class AzureADPlugin(BasePlugin):
         o May assign groups based on values in the REQUEST object, if present
         """
         users = self.users
-        if not users:
+        if not users or not principal:
             return tuple()
         try:
             _principal = self.users[principal.getId()]
@@ -467,6 +475,8 @@ class AzureADPlugin(BasePlugin):
         o May assign properties based on values in the REQUEST object, if
           present
         """
+        if not user_or_group:
+            return {}
         ugid = user_or_group.getId()
         try:
             uprops = self.enumerateUsers(id=ugid, exact_match=True)
@@ -625,7 +635,7 @@ class AzureADPlugin(BasePlugin):
         data = self._azure_ad_request(url)
         if not data:
             return ()
-        members = data.get('value')
+        members = data.get('value', ())
         member_ids = []
         for member in members:
             url = re.sub('https://{0}/{1}'.format(self._graph,
