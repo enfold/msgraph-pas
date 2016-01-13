@@ -27,10 +27,26 @@ class TestSetup(unittest.TestCase):
             )
         )
         self.assertIn('azure_ad', self.portal.acl_users)
+        self.installer.installProduct(
+            'pas.plugins.azure_ad.plone_integration'
+        )
+        self.assertIn('azure_ad', self.portal.acl_users)
 
     def test_uninstall(self):
         """Test if pas.plugins.authomatic is cleanly uninstalled."""
         self.installer.uninstallProducts(
+            ['pas.plugins.azure_ad.plone_integration']
+        )
+        self.assertFalse(
+            self.installer.isProductInstalled(
+                'pas.plugins.azure_ad'
+            )
+        )
+        self.assertNotIn('azure_ad', self.portal.acl_users)
+        # test uninstall again
+        self.assertRaises(
+            AttributeError,
+            self.installer.uninstallProducts,
             ['pas.plugins.azure_ad.plone_integration']
         )
         self.assertFalse(

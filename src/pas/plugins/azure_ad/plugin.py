@@ -80,6 +80,8 @@ class AzureADPlugin(BasePlugin):
     _client_secret = os.environ.get('AZURE_CLIENT_SECRET')
     _map_attrs = json.loads(os.environ.get('AZURE_MAP_ATTRS', '{}'))
     _format_attrs = json.loads(os.environ.get('AZURE_FORMAT_ATTRS', '{}'))
+    _map_group_attrs = \
+        json.loads(os.environ.get('AZURE_MAP_GROUP_ATTRS', '{}'))
     _format_group_attrs = \
         json.loads(os.environ.get('AZURE_FORMAT_GROUP_ATTRS', '{}'))
     plugin_caching = True
@@ -88,10 +90,12 @@ class AzureADPlugin(BasePlugin):
         self._setId(id)
         self.title = title
 
-    def map_attrs(self, reverse=False, **kw):
+    def map_attrs(self, reverse=False, map_attrs=None, **kw):
         new_attrs = {}
-        attrs = reverse and {v: k for k, v in self._map_attrs.items()} \
-            or self._map_attrs
+        if not map_attrs:
+            map_attrs = self._map_attrs
+        attrs = reverse and {v: k for k, v in map_attrs.items()} \
+            or map_attrs
         for k, v in kw.items():
             new_attr = attrs.get(k, k)
             new_attrs[new_attr] = v
@@ -156,6 +160,9 @@ class AzureADPlugin(BasePlugin):
         params['api-version'] = self._api_version
         headers['Authorization'] = 'Bearer {0}'.format(self.token)
         conn = httplib.HTTPSConnection(self._graph)
+        logger.debug('/{0}/{1}?{2}'.format(self._tenant_id,
+                                           urllib.quote(url),
+                                           urllib.urlencode(params)))
         conn.request(method, '/{0}/{1}?{2}'.format(self._tenant_id,
                                                    urllib.quote(url),
                                                    urllib.urlencode(params)),
@@ -276,14 +283,16 @@ class AzureADPlugin(BasePlugin):
             kw['id'] = id
         if 'title' in kw:
             kw['fullname'] = kw.pop('title')
-        kw = self.map_attrs(**kw)
+        kw = self.map_attrs(map_attrs=self._map_group_attrs, **kw)
         groups = self.groups(exact_match, **kw)
         if not groups:
             return ()
         pluginid = self.getId()
         ret = list()
         for group in groups:
-            group = self.map_attrs(reverse=True, **group)
+            group = self.map_attrs(reverse=True,
+                                   map_attrs=self._map_group_attrs,
+                                   **group)
             group['pluginid'] = pluginid
             ret.append(group)
         if max_results and len(ret) > max_results:
@@ -623,7 +632,9 @@ class AzureADPlugin(BasePlugin):
         """
         ids = []
         for group in self.groups():
-            id = self.map_attrs(reverse=True, **group).get('id')
+            id = self.map_attrs(reverse=True,
+                                map_attrs=self._map_group_attrs,
+                                **group).get('id')
             ids.append(id)
         return ids
 
