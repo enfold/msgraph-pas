@@ -49,6 +49,7 @@ def _azure_ad_cachekey(method, self, exact_match=False, **kw):
 
 @implementer(
     IAzureADPlugin,
+    pas_interfaces.IGroupsPlugin,
     pas_interfaces.IGroupEnumerationPlugin,
     pas_interfaces.IPropertiesPlugin,
     pas_interfaces.IUserEnumerationPlugin,
@@ -312,21 +313,22 @@ class AzureADPlugin(BasePlugin):
 
         o May assign groups based on values in the REQUEST object, if present
         """
-        users = self.users
-        if not users or not principal:
-            return tuple()
-        try:
-            _principal = self.users[principal.getId()]
-        except KeyError:
-            # XXX: that's where group in group will happen, but so far
-            # group nodes do not provide membership info so we just
-            # return if there is no user
-            return tuple()
-        if self.groups:
-            # XXX: provide group_ids function in UGM! Way too calculation-heavy
-            #      now
-            return [_.id for _ in _principal.groups]
-        return tuple()
+        url = '/users/{0}/$links/memberOf'.format(principal)
+        data = self._azure_ad_request(url)
+        if not data or 'odata.error' in data:
+            return ()
+        groups = data.get('value', ())
+        ids = []
+        for group in groups:
+            url = re.sub('https://{0}/{1}'.format(self._graph,
+                                                  self._tenant_id),
+                         '', group.get('url'))
+            data = self._azure_ad_request(url)
+            id = self.map_attrs(reverse=True,
+                                map_attrs=self._map_group_attrs,
+                                **data).get('id')
+            ids.append(id)
+        return ids
 
     # ##
     # pas_interfaces.IUserEnumerationPlugin
